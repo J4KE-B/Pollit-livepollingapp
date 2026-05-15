@@ -7,20 +7,20 @@ import { AuthService } from './core/services/auth.service';
   standalone: true,
   imports: [RouterOutlet, RouterLink],
   template: `
-    <nav class="app-nav">
-      <span class="nav-brand">⚡ LivePoll</span>
-      <a class="nav-link" routerLink="/">Join</a>
+    <header style="background:#fff;border-bottom:1px solid #e5e5ec;padding:12px 24px;display:flex;align-items:center;gap:16px;">
+      <strong style="font-size:18px;">📊 Live Poll</strong>
+      <a routerLink="/">Join</a>
       @if (auth.isLoggedIn()) {
-        <a class="nav-link" routerLink="/dashboard">Dashboard</a>
+        <a routerLink="/dashboard">Dashboard</a>
         <span class="spacer"></span>
-        <span class="muted hide-sm">{{ auth.currentUser()?.name }}</span>
+        <span class="muted">{{ auth.currentUser()?.name }}</span>
         <button (click)="auth.logout()">Logout</button>
       } @else {
         <span class="spacer"></span>
-        <a class="nav-link" routerLink="/login">Login</a>
-        <a class="nav-link" routerLink="/register">Register</a>
+        <a routerLink="/login">Login</a>
+        <a routerLink="/register">Register</a>
       }
-    </nav>
+    </header>
     <main>
       <router-outlet />
     </main>
