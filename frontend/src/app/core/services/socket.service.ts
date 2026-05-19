@@ -13,6 +13,7 @@ export interface Insights {
 export interface PollShowEvent {
   currentPollIndex: number;
   poll: Poll;
+  totalPolls: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -58,6 +59,10 @@ export class SocketService {
     return this.emitWithAck('presenter:join', { sessionId, token });
   }
 
+  presenterGoLive(): Promise<{ ok: boolean; error?: string }> {
+    return this.emitWithAck('presenter:goLive', {});
+  }
+
   presenterNextPoll(): Promise<{ ok: boolean; error?: string }> {
     return this.emitWithAck('presenter:nextPoll', {});
   }
@@ -70,10 +75,17 @@ export class SocketService {
     return this.emitWithAck('presenter:insertPoll', { poll });
   }
 
+  presenterAddPoll(
+    poll: Partial<Poll>,
+    position: 'next' | 'end'
+  ): Promise<{ ok: boolean; polls?: Poll[]; insertedAt?: number; error?: string }> {
+    return this.emitWithAck('presenter:addPoll', { poll, position });
+  }
+
   // ----- Audience actions -----
   audienceJoin(code: string, voterKey: string): Promise<{
     ok: boolean; sessionId?: string; title?: string; status?: string;
-    currentPollIndex?: number; currentPoll?: Poll | null; error?: string; hasVoted?: boolean;
+    currentPollIndex?: number; currentPoll?: Poll | null; totalPolls?: number; error?: string; hasVoted?: boolean;
   }> {
     return this.emitWithAck('audience:join', { code, voterKey });
   }

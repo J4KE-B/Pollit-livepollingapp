@@ -23,6 +23,11 @@ import { load } from '@fingerprintjs/fingerprintjs';
           } @else if (status() === 'ended') {
             <h3>Session has ended. Thanks!</h3>
           } @else if (poll()) {
+            @if (totalPolls() > 0) {
+              <div class="muted" style="margin-bottom:4px;">
+                Question {{ pollIndex() + 1 }} of {{ totalPolls() }}
+              </div>
+            }
             <h3>{{ poll()!.question }}</h3>
 
             @if (voted()) {
@@ -32,7 +37,7 @@ import { load } from '@fingerprintjs/fingerprintjs';
                 @case ('mcq') {
                   @for (opt of poll()!.options; let i = $index; track i) {
                     <button style="display:block;width:100%;margin:8px 0;padding:16px;text-align:left;"
-                            (click)="vote(i)">
+                            (click)="vote(opt)">
                       {{ opt }}
                     </button>
                   }
@@ -77,6 +82,7 @@ export class AnswerComponent implements OnInit, OnDestroy {
   status = signal<string>('');
   poll = signal<Poll | null>(null);
   pollIndex = signal(-1);
+  totalPolls = signal(0);
   voted = signal(false);
   textInput = '';
   voterKey = '';
@@ -98,6 +104,7 @@ export class AnswerComponent implements OnInit, OnDestroy {
       this.status.set(res.status || '');
       this.poll.set(res.currentPoll || null);
       this.pollIndex.set(res.currentPollIndex ?? -1);
+      this.totalPolls.set(res.totalPolls ?? 0);
       if (res.hasVoted) {
         this.voted.set(true);
       }
@@ -107,6 +114,7 @@ export class AnswerComponent implements OnInit, OnDestroy {
       this.socketSvc.pollShow$.subscribe(e => {
         this.poll.set(e.poll);
         this.pollIndex.set(e.currentPollIndex);
+        this.totalPolls.set(e.totalPolls ?? this.totalPolls());
         this.voted.set(false);
         this.textInput = '';
         this.status.set('live');
@@ -127,13 +135,13 @@ export class AnswerComponent implements OnInit, OnDestroy {
     try {
       const fp = await load();
       const result = await fp.get();
-      
+
       let localSession = localStorage.getItem('localSessionId');
       if (!localSession) {
         localSession = Math.random().toString(36).slice(2);
         localStorage.setItem('localSessionId', localSession);
       }
-      
+
       return `${result.visitorId}_${localSession}`;
     } catch (e) {
       console.warn('FingerprintJS failed, falling back to localStorage');

@@ -139,7 +139,37 @@ module.exports = function pollSocket(io) {
 
         io.to(room(session._id.toString())).emit('poll:show', {
           currentPollIndex: session.currentPollIndex,
-          poll: session.polls[session.currentPollIndex]
+          poll: session.polls[session.currentPollIndex],
+          totalPolls: session.polls.length
+        });
+        ack && ack({ ok: true });
+      } catch (err) {
+        ack && ack({ ok: false, error: 'Server error' });
+      }
+    });
+
+    // ------- Presenter goes live (sets first poll + syncs audience) -------
+    socket.on('presenter:goLive', async (_, ack) => {
+      try {
+        if (socket.data.role !== 'presenter') return ack && ack({ ok: false });
+        const session = await Session.findById(socket.data.sessionId);
+        if (!session) return ack && ack({ ok: false, error: 'Session not found' });
+        if (session.status === 'ended') return ack && ack({ ok: false, error: 'Session has ended' });
+        if (session.status === 'live') return ack && ack({ ok: false, error: 'Already live' });
+        if (session.polls.length === 0) return ack && ack({ ok: false, error: 'Add at least one poll first' });
+
+        session.status = 'live';
+        session.currentPollIndex = 0;
+        await session.save();
+
+        const state = getState(session._id.toString());
+        state.votesSinceInsight = 0;
+        state.lastInsightAt = 0;
+
+        io.to(room(session._id.toString())).emit('poll:show', {
+          currentPollIndex: session.currentPollIndex,
+          poll: session.polls[session.currentPollIndex],
+          totalPolls: session.polls.length
         });
         ack && ack({ ok: true });
       } catch (err) {
@@ -181,6 +211,52 @@ module.exports = function pollSocket(io) {
         });
         await session.save();
         ack && ack({ ok: true, insertedAt: insertAt });
+      } catch (err) {
+        ack && ack({ ok: false, error: 'Server error' });
+      }
+    });
+
+    // ------- Presenter adds a new poll mid-session (next or end; future-only) -------
+    socket.on('presenter:addPoll', async ({ poll, position }, ack) => {
+      try {
+        if (socket.data.role !== 'presenter') return ack && ack({ ok: false });
+        const validTypes = ['mcq', 'wordcloud', 'rating', 'text'];
+        if (!poll || typeof poll.question !== 'string' || !poll.question.trim() ||
+            !validTypes.includes(poll.type)) {
+          return ack && ack({ ok: false, error: 'Invalid poll' });
+        }
+        const options = Array.isArray(poll.options)
+          ? poll.options.map((o) => String(o).trim()).filter(Boolean)
+          : [];
+        if (poll.type === 'mcq' && options.length < 2) {
+          return ack && ack({ ok: false, error: 'MCQ needs at least 2 options' });
+        }
+        if (position !== 'next' && position !== 'end') {
+          return ack && ack({ ok: false, error: 'Invalid position' });
+        }
+
+        const session = await Session.findById(socket.data.sessionId);
+        if (!session) return ack && ack({ ok: false, error: 'Session not found' });
+        if (session.status === 'ended') return ack && ack({ ok: false, error: 'Session has ended' });
+
+        const newPoll = {
+          type: poll.type,
+          question: poll.question.trim(),
+          options: poll.type === 'mcq' ? options : []
+        };
+
+        let insertedAt;
+        if (position === 'next') {
+          // currentPollIndex + 1 is always a FUTURE (unanswered) index -> safe, no reindex of answered polls
+          insertedAt = session.currentPollIndex + 1;
+          session.polls.splice(insertedAt, 0, newPoll);
+        } else {
+          session.polls.push(newPoll);
+          insertedAt = session.polls.length - 1;
+        }
+        await session.save();
+
+        ack && ack({ ok: true, polls: session.polls, insertedAt });
       } catch (err) {
         ack && ack({ ok: false, error: 'Server error' });
       }
@@ -230,6 +306,7 @@ module.exports = function pollSocket(io) {
           status: session.status,
           currentPollIndex: session.currentPollIndex,
           currentPoll,
+          totalPolls: session.polls.length,
           hasVoted
         });
       } catch (err) {
