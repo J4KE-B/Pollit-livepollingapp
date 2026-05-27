@@ -21,14 +21,14 @@ A self-hosted Mentimeter-style polling tool. **v2 adds Socket.IO real-time and A
 - **Express** — REST API for auth + session CRUD
 - **Socket.IO** — real-time poll progression, votes, audience count, insight broadcasts
 - **Angular 17** — standalone components, signals, RxJS subjects bridging socket events
-- **Anthropic Claude Haiku** — AI insights (cheap, fast, ~1¢ per session)
+- **Google Gemini 1.5 Flash** — AI insights (cheap, fast, excellent for text analysis)
 
 ## Setup
 
 ### Prerequisites
 - Node.js 18+
 - MongoDB (local or Atlas)
-- Anthropic API key (optional — app works without it, the panel just stays empty)
+- Gemini API key (optional — app works without it, the panel just stays empty)
 
 ### Backend
 
@@ -38,7 +38,7 @@ npm install
 cp .env.example .env
 # Edit .env:
 #   MONGO_URI, JWT_SECRET (required)
-#   ANTHROPIC_API_KEY (optional, for AI insights)
+#   GEMINI_API_KEY (optional, for AI insights)
 npm run dev
 ```
 

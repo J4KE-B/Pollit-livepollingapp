@@ -32,6 +32,18 @@ export class AuthService {
     );
   }
 
+  loginWithGoogle(credential: string) {
+    return this.http.post<AuthResponse>(`${environment.apiUrl}/auth/google`, { credential }).pipe(
+      tap(res => this.setSession(res))
+    );
+  }
+
+  adminLogin(username: string, password: string) {
+    return this.http.post<AuthResponse>(`${environment.apiUrl}/auth/admin-login`, { username, password }).pipe(
+      tap(res => this.setSession(res))
+    );
+  }
+
   logout() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');

@@ -178,7 +178,7 @@ module.exports = function pollSocket(io) {
     });
 
     // ------- Audience joins by code -------
-    socket.on('audience:join', async ({ code }, ack) => {
+    socket.on('audience:join', async ({ code, voterKey }, ack) => {
       try {
         const session = await Session.findOne({ code });
         if (!session) return ack && ack({ ok: false, error: 'Session not found' });
@@ -197,6 +197,16 @@ module.exports = function pollSocket(io) {
         const currentPoll = session.currentPollIndex >= 0
           ? session.polls[session.currentPollIndex]
           : null;
+          
+        let hasVoted = false;
+        if (session.currentPollIndex >= 0 && voterKey) {
+          const existingVote = await Response.findOne({
+            session: session._id,
+            pollIndex: session.currentPollIndex,
+            voterKey
+          });
+          if (existingVote) hasVoted = true;
+        }
 
         ack && ack({
           ok: true,
@@ -204,7 +214,8 @@ module.exports = function pollSocket(io) {
           title: session.title,
           status: session.status,
           currentPollIndex: session.currentPollIndex,
-          currentPoll
+          currentPoll,
+          hasVoted
         });
       } catch (err) {
         ack && ack({ ok: false, error: err.message });

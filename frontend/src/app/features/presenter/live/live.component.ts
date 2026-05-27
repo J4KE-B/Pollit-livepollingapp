@@ -21,7 +21,7 @@ import { InsightsPanelComponent } from '../../../shared/components/insights-pane
 
         <div class="card" style="text-align:center;padding:24px;">
           <div class="muted">Join code</div>
-          <div style="font-size:48px;font-weight:bold;letter-spacing:8px;color:#4f46e5;">
+          <div style="font-size:56px;font-family:var(--font-heading);font-weight:800;letter-spacing:8px;color:var(--primary);">
             {{ session()!.code }}
           </div>
           <div class="muted" style="font-size:13px;">
@@ -46,8 +46,8 @@ import { InsightsPanelComponent } from '../../../shared/components/insights-pane
                       <div style="margin:6px 0;">
                         <div class="row">
                           <span style="min-width:140px;font-size:14px;">{{ formatAnswer(r.answer) }}</span>
-                          <div style="flex:1;background:#e5e5ec;border-radius:4px;height:22px;overflow:hidden;">
-                            <div [style.width.%]="pct(r.count)" style="background:#4f46e5;height:100%;transition:width 0.5s;"></div>
+                          <div style="flex:1;background:var(--surface-variant);border-radius:var(--radius);height:24px;overflow:hidden;">
+                            <div [style.width.%]="pct(r.count)" style="background:var(--data-teal);height:100%;transition:width 0.5s cubic-bezier(0.4, 0, 0.2, 1);"></div>
                           </div>
                           <span style="min-width:50px;text-align:right;">{{ r.count }}</span>
                         </div>

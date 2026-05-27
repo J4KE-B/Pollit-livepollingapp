@@ -71,11 +71,11 @@ export class SocketService {
   }
 
   // ----- Audience actions -----
-  audienceJoin(code: string): Promise<{
+  audienceJoin(code: string, voterKey: string): Promise<{
     ok: boolean; sessionId?: string; title?: string; status?: string;
-    currentPollIndex?: number; currentPoll?: Poll | null; error?: string;
+    currentPollIndex?: number; currentPoll?: Poll | null; error?: string; hasVoted?: boolean;
   }> {
-    return this.emitWithAck('audience:join', { code });
+    return this.emitWithAck('audience:join', { code, voterKey });
   }
 
   audienceVote(pollIndex: number, answer: any, voterKey: string): Promise<{ ok: boolean; error?: string }> {

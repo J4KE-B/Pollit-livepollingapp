@@ -36,6 +36,7 @@ export class SessionService {
   private pollBase = `${environment.apiUrl}/poll`;
 
   list() { return this.http.get<Session[]>(this.base); }
+  listAll() { return this.http.get<Session[]>(`${this.base}/all`); }
   get(id: string) { return this.http.get<Session>(`${this.base}/${id}`); }
   create(title: string, polls: Poll[]) { return this.http.post<Session>(this.base, { title, polls }); }
   update(id: string, payload: Partial<Session>) { return this.http.put<Session>(`${this.base}/${id}`, payload); }

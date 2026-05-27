@@ -10,5 +10,7 @@ export const routes: Routes = [
   { path: 'session/new', canActivate: [authGuard], loadComponent: () => import('./features/presenter/builder/builder.component').then(m => m.BuilderComponent) },
   { path: 'session/:id/edit', canActivate: [authGuard], loadComponent: () => import('./features/presenter/builder/builder.component').then(m => m.BuilderComponent) },
   { path: 'session/:id/live', canActivate: [authGuard], loadComponent: () => import('./features/presenter/live/live.component').then(m => m.LiveComponent) },
+  { path: 'login/admin', loadComponent: () => import('./features/admin/login/admin-login.component').then(m => m.AdminLoginComponent) },
+  { path: 'admin/dashboard', canActivate: [authGuard], loadComponent: () => import('./features/admin/dashboard/admin-dashboard.component').then(m => m.AdminDashboardComponent) },
   { path: '**', redirectTo: '' }
 ];
