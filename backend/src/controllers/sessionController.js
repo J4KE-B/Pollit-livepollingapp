@@ -19,7 +19,7 @@ exports.createSession = async (req, res) => {
 
     res.status(201).json(session);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -30,7 +30,7 @@ exports.getMySessions = async (req, res) => {
       .lean();
     res.json(sessions);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -45,7 +45,7 @@ exports.getAllSessions = async (req, res) => {
       .lean();
     res.json(sessions);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -58,7 +58,7 @@ exports.getSessionById = async (req, res) => {
     }
     res.json(session);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -80,7 +80,7 @@ exports.updateSession = async (req, res) => {
     await session.save();
     res.json(session);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -96,7 +96,7 @@ exports.deleteSession = async (req, res) => {
     await session.deleteOne();
     res.json({ message: 'Deleted' });
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -128,6 +128,6 @@ exports.getSessionResults = async (req, res) => {
 
     res.json({ session, results: aggregated });
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };

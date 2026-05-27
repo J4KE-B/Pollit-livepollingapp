@@ -83,6 +83,15 @@ async function maybeGenerateInsights(io, session, currentPollIndex) {
 
 module.exports = function pollSocket(io) {
   io.on('connection', (socket) => {
+    // Per-socket vote throttle: max 5 votes / second
+    const voteTimestamps = [];
+    function voteAllowed() {
+      const now = Date.now();
+      while (voteTimestamps.length && now - voteTimestamps[0] > 1000) voteTimestamps.shift();
+      if (voteTimestamps.length >= 5) return false;
+      voteTimestamps.push(now);
+      return true;
+    }
 
     // ------- Presenter joins their own session -------
     socket.on('presenter:join', async ({ sessionId, token }, ack) => {
@@ -134,7 +143,7 @@ module.exports = function pollSocket(io) {
         });
         ack && ack({ ok: true });
       } catch (err) {
-        ack && ack({ ok: false, error: err.message });
+        ack && ack({ ok: false, error: 'Server error' });
       }
     });
 
@@ -173,13 +182,19 @@ module.exports = function pollSocket(io) {
         await session.save();
         ack && ack({ ok: true, insertedAt: insertAt });
       } catch (err) {
-        ack && ack({ ok: false, error: err.message });
+        ack && ack({ ok: false, error: 'Server error' });
       }
     });
 
     // ------- Audience joins by code -------
     socket.on('audience:join', async ({ code, voterKey }, ack) => {
       try {
+        if (typeof code !== 'string' || code.length > 12) {
+          return ack && ack({ ok: false, error: 'Invalid code' });
+        }
+        if (voterKey !== undefined && typeof voterKey !== 'string') {
+          return ack && ack({ ok: false, error: 'Invalid voterKey' });
+        }
         const session = await Session.findOne({ code });
         if (!session) return ack && ack({ ok: false, error: 'Session not found' });
         if (session.status === 'ended') {
@@ -218,13 +233,20 @@ module.exports = function pollSocket(io) {
           hasVoted
         });
       } catch (err) {
-        ack && ack({ ok: false, error: err.message });
+        ack && ack({ ok: false, error: 'Server error' });
       }
     });
 
     // ------- Audience submits a vote -------
     socket.on('audience:vote', async ({ pollIndex, answer, voterKey }, ack) => {
       try {
+        if (!voteAllowed()) return ack && ack({ ok: false, error: 'Rate limit' });
+        if (typeof pollIndex !== 'number' || typeof voterKey !== 'string') {
+          return ack && ack({ ok: false, error: 'Invalid vote' });
+        }
+        if (typeof answer !== 'string' && typeof answer !== 'number') {
+          return ack && ack({ ok: false, error: 'Invalid answer' });
+        }
         const sessionId = socket.data.sessionId;
         if (!sessionId || !voterKey) return ack && ack({ ok: false });
 
@@ -262,7 +284,7 @@ module.exports = function pollSocket(io) {
 
         ack && ack({ ok: true });
       } catch (err) {
-        ack && ack({ ok: false, error: err.message });
+        ack && ack({ ok: false, error: 'Server error' });
       }
     });
 

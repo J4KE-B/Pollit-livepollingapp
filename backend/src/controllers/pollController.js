@@ -24,7 +24,7 @@ exports.joinByCode = async (req, res) => {
       currentPoll
     });
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -63,7 +63,7 @@ exports.submitVote = async (req, res) => {
 
     res.status(201).json({ message: 'Vote recorded' });
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -83,7 +83,7 @@ exports.startSession = async (req, res) => {
     await session.save();
     res.json(session);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -104,7 +104,7 @@ exports.nextPoll = async (req, res) => {
     await session.save();
     res.json(session);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -120,6 +120,6 @@ exports.endSession = async (req, res) => {
     await session.save();
     res.json(session);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };

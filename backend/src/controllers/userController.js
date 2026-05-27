@@ -30,6 +30,6 @@ exports.getAllUsers = async (req, res) => {
 
     res.json(users);
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Server error' });
   }
 };
