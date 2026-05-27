@@ -23,3 +23,12 @@ Thumbs.db
 .vscode/
 .idea/
 *.suo
+
+# Antigravity artifacts
+.agents/
+graphify-out/
+stitch-designs/
+stitch-designs.zip
+backend/test-gemini.js
+backend/list-models.js
+download_designs.py

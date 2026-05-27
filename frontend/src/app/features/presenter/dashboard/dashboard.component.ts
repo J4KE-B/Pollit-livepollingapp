@@ -7,8 +7,8 @@ import { SessionService, Session } from '../../../core/services/session.service'
   imports: [RouterLink],
   template: `
     <div class="container">
-      <div class="row" style="margin-bottom:16px;">
-        <h2 style="margin:0;">My Sessions</h2>
+      <div class="row" style="margin-bottom:24px;">
+        <h2 style="margin:0;font-family:var(--font-heading);font-weight:800;font-size:32px;">Presenter Dashboard</h2>
         <span class="spacer"></span>
         <button class="primary" routerLink="/session/new">+ New Session</button>
       </div>

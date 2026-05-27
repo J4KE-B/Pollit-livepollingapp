@@ -34,6 +34,21 @@ exports.getMySessions = async (req, res) => {
   }
 };
 
+exports.getAllSessions = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Forbidden: Admin access required' });
+    }
+    const sessions = await Session.find()
+      .populate('presenter', 'name email')
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
 exports.getSessionById = async (req, res) => {
   try {
     const session = await Session.findById(req.params.id);

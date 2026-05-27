@@ -7,6 +7,7 @@ const pollCtrl = require('../controllers/pollController');
 router.use(auth);
 
 router.post('/', ctrl.createSession);
+router.get('/all', ctrl.getAllSessions);
 router.get('/', ctrl.getMySessions);
 router.get('/:id', ctrl.getSessionById);
 router.put('/:id', ctrl.updateSession);

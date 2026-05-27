@@ -4,6 +4,7 @@ import { ActivatedRoute } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { Poll } from '../../../core/services/session.service';
 import { SocketService } from '../../../core/services/socket.service';
+import { load } from '@fingerprintjs/fingerprintjs';
 
 @Component({
   standalone: true,
@@ -82,12 +83,12 @@ export class AnswerComponent implements OnInit, OnDestroy {
 
   private subs: Subscription[] = [];
 
-  ngOnInit() {
+  async ngOnInit() {
     this.code = this.route.snapshot.paramMap.get('code')!;
-    this.voterKey = this.getOrCreateVoterKey();
+    this.voterKey = await this.getOrCreateVoterKey();
 
     this.socketSvc.connect();
-    this.socketSvc.audienceJoin(this.code).then(res => {
+    this.socketSvc.audienceJoin(this.code, this.voterKey).then(res => {
       this.loading.set(false);
       if (!res.ok) {
         this.error.set(res.error || 'Could not join session');
@@ -97,6 +98,9 @@ export class AnswerComponent implements OnInit, OnDestroy {
       this.status.set(res.status || '');
       this.poll.set(res.currentPoll || null);
       this.pollIndex.set(res.currentPollIndex ?? -1);
+      if (res.hasVoted) {
+        this.voted.set(true);
+      }
     });
 
     this.subs.push(
@@ -119,13 +123,27 @@ export class AnswerComponent implements OnInit, OnDestroy {
     this.socketSvc.disconnect();
   }
 
-  private getOrCreateVoterKey(): string {
-    let k = localStorage.getItem('voterKey');
-    if (!k) {
-      k = 'v_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-      localStorage.setItem('voterKey', k);
+  private async getOrCreateVoterKey(): Promise<string> {
+    try {
+      const fp = await load();
+      const result = await fp.get();
+      
+      let localSession = localStorage.getItem('localSessionId');
+      if (!localSession) {
+        localSession = Math.random().toString(36).slice(2);
+        localStorage.setItem('localSessionId', localSession);
+      }
+      
+      return `${result.visitorId}_${localSession}`;
+    } catch (e) {
+      console.warn('FingerprintJS failed, falling back to localStorage');
+      let k = localStorage.getItem('voterKey');
+      if (!k) {
+        k = 'v_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem('voterKey', k);
+      }
+      return k;
     }
-    return k;
   }
 
   vote(answer: any) {

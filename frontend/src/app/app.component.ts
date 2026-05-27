@@ -7,23 +7,24 @@ import { AuthService } from './core/services/auth.service';
   standalone: true,
   imports: [RouterOutlet, RouterLink],
   template: `
-    <header style="background:#fff;border-bottom:1px solid #e5e5ec;padding:12px 24px;display:flex;align-items:center;gap:16px;">
-      <strong style="font-size:18px;">📊 Live Poll</strong>
-      <a routerLink="/">Join</a>
-      @if (auth.isLoggedIn()) {
-        <a routerLink="/dashboard">Dashboard</a>
+    <div style="display:flex;flex-direction:column;min-height:100vh;">
+      <header style="padding:16px 32px;display:flex;align-items:center;gap:24px;">
+        <strong style="font-size:24px;color:var(--primary);font-family:var(--font-heading);letter-spacing:-0.5px;">Pollit</strong>
+        <a routerLink="/" style="color:var(--on-surface-variant);font-weight:600;font-size:14px;margin-left:8px;">Join</a>
         <span class="spacer"></span>
-        <span class="muted">{{ auth.currentUser()?.name }}</span>
-        <button (click)="auth.logout()">Logout</button>
-      } @else {
-        <span class="spacer"></span>
-        <a routerLink="/login">Login</a>
-        <a routerLink="/register">Register</a>
-      }
-    </header>
-    <main>
-      <router-outlet />
-    </main>
+        @if (auth.isLoggedIn()) {
+          <a routerLink="/dashboard" style="color:var(--primary);font-weight:600;font-size:14px;">Dashboard</a>
+          <span class="muted" style="font-weight:600;font-size:14px;">{{ auth.currentUser()?.name }}</span>
+          <a (click)="auth.logout()" style="cursor:pointer;color:var(--primary);font-weight:600;font-size:14px;">Logout</a>
+        } @else {
+          <a routerLink="/login" style="color:var(--primary);font-weight:600;font-size:14px;">Login</a>
+          <a routerLink="/register" style="color:var(--primary);font-weight:600;font-size:14px;">Register</a>
+        }
+      </header>
+      <main style="flex:1;display:flex;flex-direction:column;align-items:center;padding:24px;">
+        <router-outlet />
+      </main>
+    </div>
   `
 })
 export class AppComponent {

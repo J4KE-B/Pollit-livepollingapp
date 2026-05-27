@@ -6,10 +6,10 @@ import { Router } from '@angular/router';
   standalone: true,
   imports: [ReactiveFormsModule],
   template: `
-    <div class="container" style="max-width:420px;">
+    <div class="container" style="max-width:420px;flex:1;display:flex;flex-direction:column;justify-content:center;width:100%;">
       <div class="card" style="text-align:center;padding:32px;">
-        <h2>Join a Poll</h2>
-        <p class="muted">Enter the 6-digit code from your presenter</p>
+        <h2 style="font-family:var(--font-heading);font-weight:800;font-size:32px;margin-bottom:8px;">Pollit</h2>
+        <p class="muted" style="margin-top:0;">Enter the 6-digit code from your presenter</p>
         <form [formGroup]="form" (ngSubmit)="join()" class="col">
           <input
             formControlName="code"
