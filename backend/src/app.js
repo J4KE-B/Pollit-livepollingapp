@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 
 const authRoutes = require('./routes/auth.routes');
 const sessionRoutes = require('./routes/session.routes');
+const userRoutes = require('./routes/user.routes');
 const pollRoutes = require('./routes/poll.routes');
 const { corsOptions } = require('./config/cors');
 const errorHandler = require('./middleware/errorHandler');
@@ -40,7 +41,8 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/session', sessionRoutes);
+app.use('/api/sessions', sessionRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/poll', pollRoutes);
 
 app.use((req, res) => res.status(404).json({ message: 'Not found' }));
