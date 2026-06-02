@@ -1,14 +1,15 @@
-import { Component, inject, signal, OnInit, OnDestroy } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { SessionService, Session, PollResultGroup, Poll } from '../../../core/services/session.service';
+import { SessionService, Session, PollResultGroup, Poll, PollType } from '../../../core/services/session.service';
 import { SocketService, Insights } from '../../../core/services/socket.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { InsightsPanelComponent } from '../../../shared/components/insights-panel/insights-panel.component';
 
 @Component({
   standalone: true,
-  imports: [InsightsPanelComponent],
+  imports: [InsightsPanelComponent, FormsModule],
   template: `
     @if (session()) {
       <div class="container">
@@ -31,18 +32,27 @@ import { InsightsPanelComponent } from '../../../shared/components/insights-pane
 
         <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;">
           <div>
-            @if (currentPoll()) {
+            @if (viewPoll()) {
               <div class="card">
-                <div class="muted">
-                  Question {{ session()!.currentPollIndex + 1 }} of {{ session()!.polls.length }}
+                <div class="row">
+                  <span class="muted">
+                    Question {{ viewIndex() + 1 }} of {{ session()!.polls.length }}
+                  </span>
+                  <span class="spacer"></span>
+                  @if (isLive()) {
+                    <span class="muted" style="color:var(--data-teal);font-weight:700;">● LIVE</span>
+                  } @else {
+                    <span class="muted">Reviewing · audience on Q{{ session()!.currentPollIndex + 1 }}</span>
+                    <button style="margin-left:8px;" (click)="jumpToLive()">Jump to live →</button>
+                  }
                 </div>
-                <h3 style="margin:8px 0 16px;">{{ currentPoll()!.question }}</h3>
-                <div class="muted" style="margin-bottom:12px;">Type: {{ currentPoll()!.type }}</div>
+                <h3 style="margin:8px 0 16px;">{{ viewPoll()!.question }}</h3>
+                <div class="muted" style="margin-bottom:12px;">Type: {{ viewPoll()!.type }}</div>
 
-                @if (currentResult() && currentResult()!.total > 0) {
-                  <strong>{{ currentResult()!.total }} responses</strong>
+                @if (viewResult() && viewResult()!.total > 0) {
+                  <strong>{{ viewResult()!.total }} responses</strong>
                   <div style="margin-top:12px;">
-                    @for (r of currentResult()!.results; track $any(r.answer)) {
+                    @for (r of viewResult()!.results; track $any(r.answer)) {
                       <div style="margin:6px 0;">
                         <div class="row">
                           <span style="min-width:140px;font-size:14px;">{{ formatAnswer(r.answer) }}</span>
@@ -66,7 +76,10 @@ import { InsightsPanelComponent } from '../../../shared/components/insights-pane
 
             <div class="row" style="margin-top:12px;">
               @if (session()!.status === 'live') {
-                <button class="primary" (click)="next()" [disabled]="isLastPoll()">Next Question →</button>
+                <button (click)="prev()" [disabled]="viewIndex() <= 0">← Previous</button>
+                <button class="primary" (click)="next()" [disabled]="nextDisabled()">Next Question →</button>
+                <button (click)="toggleAddForm()">+ Add question</button>
+                <span class="spacer"></span>
                 <button class="danger" (click)="end()">End Session</button>
               } @else if (session()!.status === 'ended') {
                 <span class="muted">Session ended</span>
@@ -74,6 +87,44 @@ import { InsightsPanelComponent } from '../../../shared/components/insights-pane
                 <button class="primary" (click)="goLive()">Go Live</button>
               }
             </div>
+
+            @if (showAddForm() && session()!.status === 'live') {
+              <div class="card" style="margin-top:12px;">
+                <strong>Add a question</strong>
+                <div class="col" style="margin-top:8px;">
+                  <select [(ngModel)]="newType" (ngModelChange)="onNewTypeChange()">
+                    <option value="mcq">Multiple Choice</option>
+                    <option value="wordcloud">Word Cloud</option>
+                    <option value="rating">Rating (1-5)</option>
+                    <option value="text">Open Text</option>
+                  </select>
+
+                  <input [(ngModel)]="newQuestion" placeholder="Question" />
+
+                  @if (newType === 'mcq') {
+                    @for (opt of newOptions; let j = $index; track j) {
+                      <div class="row" style="margin-top:6px;">
+                        <input [(ngModel)]="newOptions[j]" [placeholder]="'Option ' + (j + 1)" />
+                        <button type="button" (click)="removeNewOption(j)" [disabled]="newOptions.length <= 2">×</button>
+                      </div>
+                    }
+                    <button type="button" style="margin-top:8px;" (click)="addNewOption()">+ Add option</button>
+                  }
+
+                  <div class="row" style="margin-top:12px;align-items:center;gap:16px;">
+                    <label><input type="radio" name="pos" value="next" [(ngModel)]="newPosition" /> Insert next</label>
+                    <label><input type="radio" name="pos" value="end" [(ngModel)]="newPosition" /> Add to end</label>
+                  </div>
+
+                  <div class="row" style="margin-top:12px;">
+                    <button class="primary" (click)="addQuestion()" [disabled]="adding()">
+                      {{ adding() ? 'Adding...' : 'Add question' }}
+                    </button>
+                    <button type="button" (click)="toggleAddForm()">Cancel</button>
+                  </div>
+                </div>
+              </div>
+            }
           </div>
 
           <div>
@@ -102,7 +153,32 @@ export class LiveComponent implements OnInit, OnDestroy {
   insights = signal<Insights | null>(null);
   insightGenerating = signal(false);
 
+  // Presenter-only viewing position (review). Defaults to / snaps to the live index.
+  viewIndex = signal(0);
+  // Authoritative current live poll from poll:show (covers freshly inserted polls).
+  livePoll = signal<Poll | null>(null);
+
+  // Add-question form state
+  showAddForm = signal(false);
+  newType: PollType = 'mcq';
+  newQuestion = '';
+  newOptions: string[] = ['', ''];
+  newPosition: 'next' | 'end' = 'next';
+  adding = signal(false);
+
   private subs: Subscription[] = [];
+
+  isLive = computed(() => {
+    const s = this.session();
+    return !!s && this.viewIndex() === s.currentPollIndex;
+  });
+
+  nextDisabled = computed(() => {
+    const s = this.session();
+    if (!s) return true;
+    if (this.viewIndex() < s.currentPollIndex) return false; // reviewing forward is always allowed
+    return s.currentPollIndex + 1 >= s.polls.length; // at live edge: disabled on last poll
+  });
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id')!;
@@ -124,7 +200,11 @@ export class LiveComponent implements OnInit, OnDestroy {
 
     this.socketSvc.presenterJoin(sessionId, token).then(res => {
       if (!res.ok) { alert(res.error || 'Failed to join socket'); return; }
-      if (res.session) this.session.set(res.session);
+      if (res.session) {
+        this.session.set(res.session);
+        this.viewIndex.set(res.session.currentPollIndex);
+        this.livePoll.set(res.session.polls[res.session.currentPollIndex] ?? null);
+      }
       if (res.results) this.results.set(res.results);
       if (res.audienceCount !== undefined) this.audienceCount.set(res.audienceCount);
     });
@@ -138,6 +218,8 @@ export class LiveComponent implements OnInit, OnDestroy {
           s.currentPollIndex = e.currentPollIndex;
           this.session.set({ ...s });
         }
+        this.livePoll.set(e.poll);
+        this.viewIndex.set(e.currentPollIndex); // follow live by default
         this.insights.set(null);
       }),
       this.socketSvc.sessionEnded$.subscribe(() => {
@@ -152,25 +234,20 @@ export class LiveComponent implements OnInit, OnDestroy {
     );
   }
 
-  currentPoll(): Poll | null {
+  // The poll currently being viewed (live poll preferred for the live index).
+  viewPoll(): Poll | null {
     const s = this.session();
-    if (!s || s.currentPollIndex < 0) return null;
-    return s.polls[s.currentPollIndex] || null;
+    if (!s || this.viewIndex() < 0) return null;
+    if (this.viewIndex() === s.currentPollIndex && this.livePoll()) return this.livePoll();
+    return s.polls[this.viewIndex()] || null;
   }
 
-  currentResult(): PollResultGroup | null {
-    const s = this.session();
-    if (!s) return null;
-    return this.results().find(r => r._id === s.currentPollIndex) || null;
-  }
-
-  isLastPoll(): boolean {
-    const s = this.session();
-    return !s || s.currentPollIndex + 1 >= s.polls.length;
+  viewResult(): PollResultGroup | null {
+    return this.results().find(r => r._id === this.viewIndex()) || null;
   }
 
   pct(count: number): number {
-    const total = this.currentResult()?.total || 0;
+    const total = this.viewResult()?.total || 0;
     return total ? (count / total) * 100 : 0;
   }
 
@@ -180,21 +257,38 @@ export class LiveComponent implements OnInit, OnDestroy {
   }
 
   goLive() {
-    const id = this.session()!._id;
-    this.svc.start(id).subscribe({
-      next: (s) => {
-        this.session.set(s);
-        const token = this.auth.token();
-        if (token) this.socketSvc.presenterJoin(id, token);
-      },
-      error: (err) => alert(err.error?.message || 'Failed to start')
+    this.socketSvc.presenterGoLive().then(res => {
+      if (!res.ok) { alert(res.error || 'Failed to start'); return; }
+      const s = this.session();
+      if (s) {
+        s.status = 'live';
+        s.currentPollIndex = 0;
+        this.session.set({ ...s });
+      }
+      this.viewIndex.set(0);
     });
   }
 
+  prev() {
+    if (this.viewIndex() > 0) this.viewIndex.set(this.viewIndex() - 1);
+  }
+
   next() {
+    const s = this.session();
+    if (!s) return;
+    if (this.viewIndex() < s.currentPollIndex) {
+      this.viewIndex.set(this.viewIndex() + 1); // review forward
+      return;
+    }
+    if (s.currentPollIndex + 1 >= s.polls.length) return; // last poll
     this.socketSvc.presenterNextPoll().then(res => {
       if (!res.ok) alert(res.error || 'Failed');
     });
+  }
+
+  jumpToLive() {
+    const s = this.session();
+    if (s) this.viewIndex.set(s.currentPollIndex);
   }
 
   end() {
@@ -202,13 +296,56 @@ export class LiveComponent implements OnInit, OnDestroy {
     this.socketSvc.presenterEndSession();
   }
 
+  toggleAddForm() {
+    const open = !this.showAddForm();
+    this.showAddForm.set(open);
+    if (open) {
+      this.newType = 'mcq';
+      this.newQuestion = '';
+      this.newOptions = ['', ''];
+      this.newPosition = 'next';
+    }
+  }
+
+  onNewTypeChange() {
+    if (this.newType === 'mcq' && this.newOptions.length < 2) {
+      this.newOptions = ['', ''];
+    }
+  }
+
+  addNewOption() { this.newOptions.push(''); }
+
+  removeNewOption(i: number) {
+    if (this.newOptions.length > 2) this.newOptions.splice(i, 1);
+  }
+
+  addQuestion() {
+    const q = this.newQuestion.trim();
+    if (!q) { alert('Enter a question'); return; }
+    const opts = this.newType === 'mcq'
+      ? this.newOptions.map(o => o.trim()).filter(Boolean)
+      : [];
+    if (this.newType === 'mcq' && opts.length < 2) {
+      alert('MCQ needs at least 2 options'); return;
+    }
+    this.adding.set(true);
+    this.socketSvc.presenterAddPoll(
+      { type: this.newType, question: q, options: opts },
+      this.newPosition
+    ).then(res => {
+      this.adding.set(false);
+      if (!res.ok) { alert(res.error || 'Failed to add'); return; }
+      const s = this.session();
+      if (s && res.polls) { s.polls = res.polls; this.session.set({ ...s }); }
+      this.showAddForm.set(false);
+    });
+  }
+
   onUseFollowup(question: string) {
-    this.socketSvc.presenterInsertPoll({
-      type: 'text',
-      question,
-      options: []
-    }).then(res => {
+    this.socketSvc.presenterAddPoll({ type: 'text', question, options: [] }, 'next').then(res => {
       if (!res.ok) { alert(res.error || 'Failed to insert'); return; }
+      const s = this.session();
+      if (s && res.polls) { s.polls = res.polls; this.session.set({ ...s }); }
       this.socketSvc.presenterNextPoll();
     });
   }
