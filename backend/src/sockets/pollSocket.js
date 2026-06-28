@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const Session = require('../models/Session');
 const Response = require('../models/Response');
 const { generateInsights } = require('../services/aiInsightsService');
+const { detector, deriveFingerprint, clientIpFromSocket } = require('../security/abuseDetector');
 
 // Per-session in-memory state for AI throttling and audience count
 const sessionState = new Map();
@@ -66,7 +67,20 @@ async function maybeGenerateInsights(io, session, currentPollIndex) {
       textSamples = docs.map(d => d.answer).filter(a => typeof a === 'string');
     }
 
-    const insights = await generateInsights(poll, pollResult, textSamples);
+    // textSamples is raw audience free-text -- the prompt-injection surface. generateInsights()
+    // guards it internally (src/security/promptGuard.js) before it reaches Gemini; we only ask to
+    // be told when an attempt is caught so the presenter can see it.
+    const insights = await generateInsights(poll, pollResult, textSamples, {
+      onInjectionDetected: ({ detections, redactedCount }) => {
+        io.to(room(session._id.toString())).emit('security:alert', {
+          kind: 'prompt_injection',
+          count: detections.length,
+          redacted: redactedCount,
+          rules: [...new Set(detections.flatMap(d => d.rules))],
+          message: 'Prompt-injection attempt detected in open-text answers and neutralised.'
+        });
+      }
+    });
 
     state.lastInsightAt = Date.now();
     state.votesSinceInsight = 0;
@@ -83,6 +97,11 @@ async function maybeGenerateInsights(io, session, currentPollIndex) {
 
 module.exports = function pollSocket(io) {
   io.on('connection', (socket) => {
+    // Resolved once per connection. Behind Koyeb's proxy the real client IP is the first
+    // X-Forwarded-For hop (app.js sets trust proxy = 1). XFF is client-spoofable in general;
+    // we rely on the edge proxy overwriting it, and we never make IP the sole blocking signal.
+    socket.data.clientIp = clientIpFromSocket(socket);
+
     // Per-socket vote throttle: max 5 votes / second
     const voteTimestamps = [];
     function voteAllowed() {
@@ -315,8 +334,11 @@ module.exports = function pollSocket(io) {
     });
 
     // ------- Audience submits a vote -------
-    socket.on('audience:vote', async ({ pollIndex, answer, voterKey }, ack) => {
+    socket.on('audience:vote', async ({ pollIndex, answer, voterKey, fingerprint }, ack) => {
       try {
+        // Socket-local throttle (cheap, first line). NOTE: this resets on reconnect, so it alone
+        // does not stop a flooder who cycles sockets -- that is what the abuse detector below is
+        // for, since its state is keyed on fingerprint/IP and survives reconnection.
         if (!voteAllowed()) return ack && ack({ ok: false, error: 'Rate limit' });
         if (typeof pollIndex !== 'number' || typeof voterKey !== 'string') {
           return ack && ack({ ok: false, error: 'Invalid vote' });
@@ -324,8 +346,49 @@ module.exports = function pollSocket(io) {
         if (typeof answer !== 'string' && typeof answer !== 'number') {
           return ack && ack({ ok: false, error: 'Invalid answer' });
         }
+        if (fingerprint !== undefined && typeof fingerprint !== 'string') {
+          return ack && ack({ ok: false, error: 'Invalid fingerprint' });
+        }
         const sessionId = socket.data.sessionId;
         if (!sessionId || !voterKey) return ack && ack({ ok: false });
+
+        // ---- Abuse / anomaly detection (vote-rate spikes + fingerprint clustering) ----
+        // The fingerprint is derived from voterKey (`${visitorId}_${localNonce}`) rather than
+        // trusted from the client field, so a client that simply omits/forges `fingerprint`
+        // still gets clustered by the device id embedded in the voterKey it must send anyway.
+        const fp = deriveFingerprint(voterKey) || (typeof fingerprint === 'string' ? fingerprint : null);
+        const verdict = detector.check({
+          sessionId,
+          voterKey,
+          fingerprint: fp,
+          ip: socket.data.clientIp
+        });
+
+        if (!verdict.allowed) {
+          // Tell the offender (so a false-positive user sees why they are stuck)...
+          socket.emit('abuse:blocked', {
+            rule: verdict.rule,
+            reason: verdict.reason,
+            retryAfterMs: verdict.retryAfterMs
+          });
+          // ...and alert the presenter's room that an attack is in progress.
+          io.to(room(sessionId)).emit('security:alert', {
+            kind: 'vote_abuse',
+            rule: verdict.rule,
+            scope: verdict.scope,
+            message: 'Automated voting detected and blocked.'
+          });
+          return ack && ack({ ok: false, error: verdict.reason, retryAfterMs: verdict.retryAfterMs });
+        }
+
+        // Non-blocking anomalies (e.g. many devices behind one NAT) -- surface, do not punish.
+        if (verdict.flags && verdict.flags.length) {
+          io.to(room(sessionId)).emit('security:alert', {
+            kind: 'vote_anomaly',
+            rule: verdict.flags[0].rule,
+            message: verdict.flags[0].note
+          });
+        }
 
         const session = await Session.findById(sessionId);
         if (!session || session.status !== 'live') {

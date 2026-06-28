@@ -90,8 +90,13 @@ export class SocketService {
     return this.emitWithAck('audience:join', { code, voterKey });
   }
 
-  audienceVote(pollIndex: number, answer: any, voterKey: string): Promise<{ ok: boolean; error?: string }> {
-    return this.emitWithAck('audience:vote', { pollIndex, answer, voterKey });
+  // `fingerprint` is the FingerprintJS visitorId (the device component of voterKey). The backend
+  // does NOT trust this field -- it re-derives the fingerprint from voterKey's prefix -- but
+  // sending it explicitly keeps the abuse-detection contract obvious at the call site.
+  audienceVote(
+    pollIndex: number, answer: any, voterKey: string, fingerprint?: string
+  ): Promise<{ ok: boolean; error?: string; retryAfterMs?: number }> {
+    return this.emitWithAck('audience:vote', { pollIndex, answer, voterKey, fingerprint });
   }
 
   private emitWithAck(event: string, payload: any): Promise<any> {

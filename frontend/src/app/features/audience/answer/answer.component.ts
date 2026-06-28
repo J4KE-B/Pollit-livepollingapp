@@ -86,6 +86,7 @@ export class AnswerComponent implements OnInit, OnDestroy {
   voted = signal(false);
   textInput = '';
   voterKey = '';
+  fingerprint = '';
 
   private subs: Subscription[] = [];
 
@@ -131,6 +132,14 @@ export class AnswerComponent implements OnInit, OnDestroy {
     this.socketSvc.disconnect();
   }
 
+  /**
+   * voterKey = `${visitorId}_${localSessionNonce}`.
+   *   visitorId          -> stable DEVICE fingerprint (survives clearing site data / incognito)
+   *   localSessionNonce  -> per-browser-storage identity (does NOT survive clearing site data)
+   * The backend's unique index dedupes on the full voterKey, so clearing localStorage mints a new
+   * identity and would allow a second vote -- except that the device half stays constant, which is
+   * precisely what backend/src/security/abuseDetector.js clusters on (FP_IDENTITY_CHURN).
+   */
   private async getOrCreateVoterKey(): Promise<string> {
     try {
       const fp = await load();
@@ -142,6 +151,7 @@ export class AnswerComponent implements OnInit, OnDestroy {
         localStorage.setItem('localSessionId', localSession);
       }
 
+      this.fingerprint = result.visitorId;
       return `${result.visitorId}_${localSession}`;
     } catch (e) {
       console.warn('FingerprintJS failed, falling back to localStorage');
@@ -150,19 +160,24 @@ export class AnswerComponent implements OnInit, OnDestroy {
         k = 'v_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
         localStorage.setItem('voterKey', k);
       }
+      // No device signal available on this path -- leave fingerprint empty rather than send a
+      // random value the backend might mistake for a device id.
+      this.fingerprint = '';
       return k;
     }
   }
 
   vote(answer: any) {
     if (this.pollIndex() < 0) return;
-    this.socketSvc.audienceVote(this.pollIndex(), answer, this.voterKey).then(res => {
-      if (res.ok) {
-        this.voted.set(true);
-      } else {
-        if (res.error === 'Already voted') this.voted.set(true);
-        else alert(res.error || 'Vote failed');
-      }
-    });
+    this.socketSvc
+      .audienceVote(this.pollIndex(), answer, this.voterKey, this.fingerprint || undefined)
+      .then(res => {
+        if (res.ok) {
+          this.voted.set(true);
+        } else {
+          if (res.error === 'Already voted') this.voted.set(true);
+          else alert(res.error || 'Vote failed');
+        }
+      });
   }
 }

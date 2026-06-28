@@ -1,5 +1,6 @@
 const Session = require('../models/Session');
 const Response = require('../models/Response');
+const { detector, deriveFingerprint } = require('../security/abuseDetector');
 
 // Public: audience joins by code
 exports.joinByCode = async (req, res) => {
@@ -37,6 +38,9 @@ exports.submitVote = async (req, res) => {
     if (pollIndex === undefined || answer === undefined || !voterKey) {
       return res.status(400).json({ message: 'pollIndex, answer, voterKey required' });
     }
+    if (typeof voterKey !== 'string') {
+      return res.status(400).json({ message: 'Invalid voterKey' });
+    }
 
     const session = await Session.findOne({ code });
     if (!session) return res.status(404).json({ message: 'Session not found' });
@@ -45,6 +49,25 @@ exports.submitVote = async (req, res) => {
     }
     if (session.currentPollIndex !== pollIndex) {
       return res.status(400).json({ message: 'This poll is not currently active' });
+    }
+
+    // Abuse / anomaly detection. This REST path is a real bypass risk: without this check an
+    // attacker could ignore Socket.IO entirely and flood POST /api/poll/:code/vote, which is
+    // covered only by the coarse 120 req/min global limiter. The detector is a SHARED singleton,
+    // so vote-rate and fingerprint-cluster state is accumulated across BOTH transports -- a
+    // flooder cannot reset their budget by switching from sockets to REST.
+    const verdict = detector.check({
+      sessionId: session._id.toString(),
+      voterKey,
+      fingerprint: deriveFingerprint(voterKey),
+      ip: req.ip
+    });
+    if (!verdict.allowed) {
+      return res.status(429).json({
+        message: verdict.reason,
+        rule: verdict.rule,
+        retryAfterMs: verdict.retryAfterMs
+      });
     }
 
     try {
