@@ -12,8 +12,14 @@ function getClient() {
 /**
  * Build the Gemini prompt.
  *
- * SECURITY: `textSamples` is raw, anonymous, audience-supplied text -- the app's prompt-injection
- * surface. It is run through src/security/promptGuard.js BEFORE it reaches this function's output:
+ * SECURITY: audience free text reaches this prompt by TWO paths, and both are guarded through
+ * src/security/promptGuard.js before the prompt is built:
+ *   (a) `textSamples` -- the sampled open-text answers, and
+ *   (b) `aggregated.results` -- for text/wordcloud polls the breakdown is grouped by the answer
+ *       string, so each entry is raw audience text too (guarded via promptGuard.guardResults).
+ * Guarding (a) but not (b) would let a payload ride in through the results breakdown untouched.
+ *
+ * Each raw string is run through promptGuard BEFORE it reaches this function's output:
  *   1. heuristics flag known injection shapes (high-severity payloads are redacted outright),
  *   2. sanitisation strips zero-width/bidi chars and chat-template markers,
  *   3. whatever survives is embedded inside a NONCE-DELIMITED block the model is told to treat
@@ -31,9 +37,16 @@ function getClient() {
 function buildPrompt(poll, aggregated, textSamples) {
   const guarded = promptGuard.guardSamples(textSamples);
 
-  const resultsBlock = aggregated && aggregated.results
-    ? JSON.stringify(aggregated.results)
-    : '[]';
+  // For text/wordcloud polls the results breakdown is grouped BY the answer string, so each entry
+  // carries raw audience text -- a second injection path into the prompt. Guard it the same way as
+  // the samples so a payload cannot ride in through `Results breakdown` untouched.
+  const isFreeText = poll?.type === 'text' || poll?.type === 'wordcloud';
+  const guardedResults = promptGuard.guardResults(aggregated?.results, isFreeText);
+  const resultsBlock = JSON.stringify(guardedResults.results);
+
+  // Merge detections from both untrusted paths so the caller flags/alerts on either.
+  const detections = guarded.detections.concat(guardedResults.detections);
+  const redactedCount = guarded.redactedCount + guardedResults.redactedCount;
 
   // Presenter-authored, but still sanitised and length-capped.
   const question = promptGuard.sanitize(poll?.question || '');
@@ -62,7 +75,7 @@ ${promptGuard.dataHandlingInstruction(nonce)}
 
 Output ONLY valid JSON matching the schema, with no markdown formatting or extra text.`;
 
-  return { prompt, detections: guarded.detections, redactedCount: guarded.redactedCount, nonce };
+  return { prompt, detections, redactedCount, nonce };
 }
 
 function safeJsonParse(text) {

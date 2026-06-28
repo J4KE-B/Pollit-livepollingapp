@@ -97,9 +97,10 @@ async function maybeGenerateInsights(io, session, currentPollIndex) {
 
 module.exports = function pollSocket(io) {
   io.on('connection', (socket) => {
-    // Resolved once per connection. Behind Koyeb's proxy the real client IP is the first
-    // X-Forwarded-For hop (app.js sets trust proxy = 1). XFF is client-spoofable in general;
-    // we rely on the edge proxy overwriting it, and we never make IP the sole blocking signal.
+    // Resolved once per connection. Behind Koyeb's proxy the real client IP is the LAST trusted
+    // X-Forwarded-For hop (app.js sets trust proxy = 1), matching Express's req.ip on the REST
+    // path. The leftmost hop is client-spoofable; clientIpFromSocket reads the trusted hop. We
+    // still never make IP the sole blocking signal.
     socket.data.clientIp = clientIpFromSocket(socket);
 
     // Per-socket vote throttle: max 5 votes / second

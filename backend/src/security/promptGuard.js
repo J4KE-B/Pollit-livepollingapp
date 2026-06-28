@@ -230,6 +230,52 @@ function guardSamples(textSamples) {
 }
 
 /**
+ * Guard the aggregated results breakdown.
+ *
+ * WHY THIS EXISTS: for `text`/`wordcloud` polls the aggregation groups by the answer STRING, so each
+ * `{ answer, count }` entry carries raw, audience-supplied text -- the exact same injection surface as
+ * the sampled answers, arriving by a second path. If the results breakdown is stringified into the
+ * prompt untouched, every payload the sample guard redacts is handed to the model verbatim through
+ * this channel. So free-text answers here get the same inspect+sanitise treatment; high-severity hits
+ * are redacted. (MCQ/rating answers are presenter-authored option labels -- lower risk -- but we still
+ * sanitise them, matching how the question/options are handled.)
+ *
+ * Returns { results, detections, redactedCount }. Counts are kept separate so callers can flag them
+ * alongside the sample detections rather than losing them.
+ */
+function guardResults(results, isFreeText) {
+  const input = Array.isArray(results) ? results : [];
+  const detections = [];
+  let redactedCount = 0;
+
+  const guarded = input.map((entry, index) => {
+    const answer = entry && typeof entry.answer === 'string' ? entry.answer : String(entry?.answer ?? '');
+    const count = entry?.count;
+
+    if (!isFreeText) {
+      return { answer: sanitize(answer), count };
+    }
+
+    const g = guardSample(answer);
+    if (g.findings.length) {
+      detections.push({
+        index,
+        via: 'results',
+        severity: g.severity,
+        score: g.score,
+        rules: g.findings.map(f => f.id),
+        redacted: g.redacted,
+        preview: answer.slice(0, 80)
+      });
+    }
+    if (g.redacted) redactedCount++;
+    return { answer: g.value, count };
+  });
+
+  return { results: guarded, detections, redactedCount };
+}
+
+/**
  * Layer 3 (the load-bearing one): wrap untrusted content in a nonce-delimited block.
  *
  * The nonce is random per request (96 bits), so an attacker cannot write the closing delimiter to
@@ -273,6 +319,7 @@ module.exports = {
   sanitize,
   guardSample,
   guardSamples,
+  guardResults,
   buildUserDataBlock,
   dataHandlingInstruction,
   HIDDEN_CHAR_RE,

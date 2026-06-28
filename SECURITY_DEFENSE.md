@@ -77,9 +77,17 @@ But the **device half of the key does not change**. So the attack's own signatur
 control #1 is what trips control #2. This is the nicest part of the design — lead with it.
 
 `deriveFingerprint()` (`abuseDetector.js:187`) extracts the device id from the `voterKey` prefix.
-Note the backend **derives** it rather than trusting the client's `fingerprint` field: an attacker
-can simply stop sending that field, but they **must** send a `voterKey` to vote at all.
-(Test: *"identity churn is caught even when the client omits/forges the fingerprint field"*.)
+Note the backend **derives** it rather than trusting the client's `fingerprint` field.
+
+> **Be precise about what this buys — an interviewer will push here.** Deriving from `voterKey`
+> defeats the *field-omission* dodge (an attacker who just stops sending `fingerprint` is still
+> clustered, because they must send a `voterKey` to vote). It does **not** defeat the
+> *key-randomization* dodge: `voterKey` is entirely client-supplied, so a script that sends a fresh
+> random key per vote produces a new fingerprint each time and slips past every per-device rule —
+> only the volumetric IP backstop remains. Say this yourself; don't let them find it. It's limitation
+> #1 below, and it's the honest ceiling of fingerprint-based defense against a determined scripted
+> attacker. (Test: *"identity churn is caught even when the client omits/forges the fingerprint
+> field"* — i.e. the field-omission case specifically.)
 
 > **Gotcha handled:** when FingerprintJS fails to load, the frontend falls back to a random key
 > prefixed `v_`. Naively splitting on `_` would bucket *every* such user under the fingerprint
@@ -143,7 +151,7 @@ audience:vote {pollIndex, answer, voterKey, fingerprint?}
         ├─ shape validation                   pollSocket.js:344
         │
         ├─ deriveFingerprint(voterKey)        abuseDetector.js:187
-        ├─ clientIpFromSocket(socket)         abuseDetector.js:200  (first X-Forwarded-For hop)
+        ├─ clientIpFromSocket(socket)         abuseDetector.js:200  (trusted/rightmost XFF hop)
         │
         └─ detector.check({sessionId, voterKey, fingerprint, ip})   abuseDetector.js:258
                  1. blocked already?      → reject (and note: hammering while blocked does NOT
@@ -182,7 +190,17 @@ transports.** Worth mentioning: finding this bypass is a better story than the f
 ### 3.1 What prompt injection actually is (nail this definition)
 
 `text` and `wordcloud` polls let any anonymous audience member type free text. Those strings are
-read back (`pollSocket.js:62-67`) and interpolated into the Gemini prompt.
+interpolated into the Gemini prompt by **two** paths, and both are guarded:
+- the sampled answers (`pollSocket.js:62-67` → `guardSamples`), and
+- the **results breakdown** — for these poll types the aggregation groups *by the answer string*, so
+  each `{ answer, count }` entry is raw audience text too (`guardResults`, `aiInsightsService.js`).
+
+> **Interview note — trace both paths out loud.** The subtle bug is that guarding only the samples
+> leaves the results breakdown as a second, unguarded channel: a payload the sample guard redacts
+> would still reach the model verbatim through `Results breakdown: [...]`. Both are now routed through
+> the same `inspect`/`sanitize`/redact logic; the regression test is
+> *"payload arriving ONLY via the results breakdown is guarded too"*. If an interviewer asks *"show me
+> every place audience text reaches the model,"* naming both paths unprompted is the strong answer.
 
 > To an LLM, the system prompt and the user data arrive as **one flat token stream**. There is no
 > privileged instruction channel — no `PreparedStatement`, no "this part is code, that part is
@@ -265,12 +283,13 @@ style of the existing `security.*.test.js` files. `npm test` (`node --test`) alr
 The abuse tests inject a **fake clock** rather than sleeping, so sliding windows and 60s cooldowns
 are exercised exactly, with no flakiness and no slow suite.
 
-**Real output — 69 tests, 0 failures** (was 10 before this work):
+**Real output — 71 tests, 0 failures** (was 10 before this work; +2 are the results-path and
+trusted-hop regression tests from the security review):
 
 ```
-# tests 69
+# tests 71
 # suites 0
-# pass 69
+# pass 71
 # fail 0
 # cancelled 0
 # skipped 0
@@ -464,10 +483,13 @@ In priority order:
    This raises cost; it does not eliminate the attack.
 3. **IP rotation defeats the backstop.** A proxy pool ends the game. There is no clever fix without
    real identity.
-4. **`X-Forwarded-For` is client-spoofable in general.** We rely on the edge proxy (Koyeb)
-   *overwriting* it, and `app.js:16` sets `trust proxy = 1` for exactly one hop. If that assumption
-   ever broke, IP-scoped rules become attacker-controlled — which is another reason IP is never the
-   *sole* blocking signal.
+4. **`X-Forwarded-For` is client-spoofable in general.** Both transports now read the **trusted
+   (rightmost) hop**: `app.js:16` sets `trust proxy = 1` so Express's `req.ip` uses it on the REST
+   path, and `clientIpFromSocket` reads the same hop on the socket path. (An earlier version took the
+   *leftmost* hop on the socket path, which a client can forge — I fixed that so the two paths agree;
+   the regression test forges a leftmost hop and asserts it is ignored.) The residual risk is that
+   this trusts Koyeb to append a correct value — which is another reason IP is never the *sole*
+   blocking signal.
 5. **In-memory state**: wrong under multi-node, and lost on restart (see §5).
 6. **Prompt-injection heuristics are bypassable** (homoglyphs, encodings, other languages, novel
    phrasing). The structural nonce-delimiting is the real control — and *it* is a mitigation, not a

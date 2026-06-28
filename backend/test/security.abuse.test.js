@@ -336,11 +336,22 @@ test('detector can be disabled by config (kill switch)', () => {
   }
 });
 
-test('clientIpFromSocket prefers the first X-Forwarded-For hop', () => {
-  const socket = {
-    handshake: { headers: { 'x-forwarded-for': '203.0.113.9, 70.41.3.18' }, address: '10.0.0.1' }
+test('clientIpFromSocket reads the trusted (rightmost) hop, not the spoofable leftmost one', () => {
+  // With trust proxy = 1, the trusted proxy appends the address it observed as the RIGHTMOST hop.
+  // XFF "<client-as-proxy-saw-them>" with the proxy hop last => we key on the last hop.
+  const legit = {
+    handshake: { headers: { 'x-forwarded-for': '70.41.3.18, 203.0.113.9' }, address: '10.0.0.1' }
   };
-  assert.strictEqual(clientIpFromSocket(socket), '203.0.113.9');
+  assert.strictEqual(clientIpFromSocket(legit), '203.0.113.9');
+
+  // Attacker forges a leftmost hop: "1.2.3.4" is theirs, "203.0.113.9" is what the proxy appended.
+  // The forged value must be ignored; we key on the trusted (rightmost) hop.
+  const spoofed = {
+    handshake: { headers: { 'x-forwarded-for': '1.2.3.4, 203.0.113.9' }, address: '10.0.0.1' }
+  };
+  assert.strictEqual(clientIpFromSocket(spoofed), '203.0.113.9', 'forged leftmost hop must not be used');
+
+  // Fallbacks
   assert.strictEqual(clientIpFromSocket({ handshake: { headers: {}, address: '10.0.0.1' } }), '10.0.0.1');
   assert.strictEqual(clientIpFromSocket({}), 'unknown');
 });

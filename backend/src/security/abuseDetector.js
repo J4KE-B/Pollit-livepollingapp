@@ -196,12 +196,29 @@ function deriveFingerprint(voterKey) {
   return prefix;
 }
 
-/** Best-effort client IP for a Socket.IO connection (trust_proxy=1 => first XFF hop). */
+/**
+ * Best-effort client IP for a Socket.IO connection.
+ *
+ * Socket.IO does NOT honour Express's `trust proxy` setting, so we must reproduce the same trust
+ * boundary by hand. With `trust proxy = 1` (one trusted proxy in front of us), the real client is
+ * the LAST X-Forwarded-For hop -- the address our single trusted proxy observed and appended.
+ * Taking the FIRST (leftmost) hop instead -- as an earlier version did -- is the classic mistake:
+ * the leftmost hop is fully attacker-controlled (a client can send `X-Forwarded-For: 1.2.3.4` and,
+ * if the proxy appends rather than overwrites, that forged value survives), which would let an
+ * attacker rotate a fake IP per connection to evade the IP rate limit, or forge a victim's IP to
+ * get them blocked. Reading the trusted (rightmost) hop keeps the socket path consistent with the
+ * REST path's `req.ip`. IP is never the sole blocking signal regardless.
+ */
 function clientIpFromSocket(socket) {
   const xff = socket?.handshake?.headers?.['x-forwarded-for'];
   if (typeof xff === 'string' && xff.length) {
-    const first = xff.split(',')[0].trim();
-    if (first) return first;
+    const hops = xff.split(',').map(h => h.trim()).filter(Boolean);
+    if (hops.length) {
+      // trust proxy = 1: exactly one trusted proxy (Koyeb) sits in front of us and appends the
+      // address it observed as the RIGHTMOST hop. That is the value we trust. Anything to its left
+      // was supplied by the client and is spoofable, so we ignore it.
+      return hops[hops.length - 1];
+    }
   }
   return socket?.handshake?.address || 'unknown';
 }
