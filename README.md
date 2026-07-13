@@ -70,7 +70,23 @@ Runs on http://localhost:4200
 
 - Word cloud d3 rendering (still shows as bar list — easy add later)
 - Deployment configs
-- Rate limiting / production hardening
+
+## Security
+
+- **Abuse/anomaly detection** on vote traffic: sliding-window vote-rate limits
+  and device-fingerprint clustering, enforced identically on both the
+  Socket.IO and REST vote paths so an attacker can't just switch transports.
+  Rules that auto-block are per-device (where one human can't plausibly
+  produce the traffic); cross-device signals only flag, so a lecture hall on
+  shared NAT never gets mass-blocked.
+- **Prompt-injection defense** on open-text poll answers before they reach
+  Gemini: heuristic detection, sanitization, and a nonce-delimited untrusted-
+  data block so the model can't be steered into treating audience text as
+  instructions. Applied to every path audience text takes into the prompt,
+  including the aggregated results breakdown.
+- Trusted-proxy-aware IP resolution (Socket.IO and REST agree on which
+  `X-Forwarded-For` hop to trust), `helmet`, Mongo-injection sanitization, and
+  a dedicated `security.*.test.js` suite exercised in CI.
 
 ## API + Socket events
 
