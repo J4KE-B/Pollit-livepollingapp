@@ -32,3 +32,7 @@ stitch-designs.zip
 backend/test-gemini.js
 backend/list-models.js
 download_designs.py
+
+# Local-only interview-prep notes (not for the public repo)
+SECURITY_DEFENSE.md
+docs/superpowers/
